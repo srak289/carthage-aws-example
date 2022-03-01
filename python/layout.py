@@ -13,9 +13,20 @@ from carthage_aws.dns import *
 
 class layout(CarthageLayout, AnsibleModelMixin):
 
+    domain = "test.photon.ac"
+
     add_provider(machine_implementation_key, dependency_quote(AwsVm))
 
-    domain = "test.photon.ac"
+    add_provider(InjectionKey('parent_zone'), when_needed(AwsHostedZone, name="photon.ac"))
+    add_provider(InjectionKey('test_zone'), when_needed(AwsHostedZone, id='Z045557828SZFFJKOFJBJ'))#name="test.photon.ac"))
+
+    @inject(zone=InjectionKey('test_zone'), parent=InjectionKey('parent_zone'))
+    class make_a_record(ModelTasks, AsyncInjectable):
+        async def async_ready(self):
+            self.model = await self.ainjector.get_instance_async(InjectionKey(AbstractMachineModel))
+            await self.zone.update_record(self.model.name, self.model.ip_address, 'A')
+            await self.zone.delegate_zone(self.parent)
+            return await super().async_ready()
 
     @provides('test-subnet')
     class test_subnet(NetworkModel):
@@ -23,16 +34,6 @@ class layout(CarthageLayout, AnsibleModelMixin):
         v4_config = V4Config(
             network = "192.168.101.0/24"
         )
-
-    add_provider(InjectionKey(AwsHostedZone), when_needed(AwsHostedZone, name="test.photon.ac"))
-
-    @inject(zone=InjectionKey(AwsHostedZone), model=AbstractMachineModel)
-    class make_a_record(ModelTasks, AsyncInjectable):
-        async def async_ready(self):
-            #await self.zone.update_record(self.model.name, self.model.machine.ip_address, 'A')
-            # Non async dependency injected into async context
-            await self.zone.update_record('carthage_test.test.photon.ac', '192.168.101.5', 'A')
-            return await super().async_ready()
 
     class test_vm(MachineModel):
 
